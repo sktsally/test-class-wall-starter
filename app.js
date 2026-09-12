@@ -22,6 +22,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInAnonymously,
   signOut,
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
@@ -69,11 +70,11 @@ async function loadMemos() {
 }
 
 // 메모를 새로 씁니다.
-// 백엔드 2: 여기에 "누가 썼는지"(uid)를 함께 저장하게 됩니다.
+// 백엔드 2: 여기에 "누가 썼는지"(uid)와 역할(rid)을 함께 저장하게 됩니다.
 async function addMemo(text) {
   // 로그인 여부 확인
   if (!currentUser) {
-    alert("로그인 후 메모를 작성할 수 있습니다.");
+    alert("교사 로그인 또는 학생 참여 후 메모를 작성할 수 있습니다.");
     return false;
   }
 
@@ -87,7 +88,8 @@ async function addMemo(text) {
     await addDoc(collection(db, "memos"), {
       text: text,
       uid: currentUser.uid,
-      author: currentUser.displayName || "선생님",
+      author: currentUser.displayName,
+      rid: currentUser.rid, // 'teacher' 또는 'student'
       createdAt: Date.now()
     });
     return true;
@@ -130,10 +132,16 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 본인이 작성한 메모이거나 기존 메모(uid 없음)일 때만 삭제 버튼 표시
-  if (!memo.uid || (currentUser && currentUser.uid === memo.uid)) {
+  // 권한 검사:
+  // - 교사(teacher): 모든 메모 삭제 가능 (관리 권한)
+  // - 학생(student): 본인이 작성한 메모만 삭제 가능
+  const isTeacher = currentUser && currentUser.rid === "teacher";
+  const isMyMemo = currentUser && currentUser.uid === memo.uid;
+
+  if (isTeacher || isMyMemo || !memo.uid) {
     const del = document.createElement("button");
     del.textContent = "×";
+    del.title = isTeacher && !isMyMemo ? "교사 권한으로 삭제" : "삭제";
     del.addEventListener("click", async function () {
       await deleteMemo(memo.id);
       await render();
@@ -145,23 +153,25 @@ function makeMemo(memo) {
   span.textContent = memo.text;
   div.appendChild(span);
 
-  // 작성자가 있으면 표시
-  if (memo.author) {
-    const authorEl = document.createElement("div");
-    authorEl.style.fontSize = "12px";
-    authorEl.style.color = "#888";
-    authorEl.style.marginTop = "8px";
-    authorEl.textContent = "- " + memo.author;
-    div.appendChild(authorEl);
-  }
+  // 작성자 및 역할(rid) 정보 표시
+  const metaEl = document.createElement("div");
+  metaEl.style.fontSize = "12px";
+  metaEl.style.color = "#888";
+  metaEl.style.marginTop = "8px";
+
+  const roleText = memo.rid === "teacher" ? "👨‍🏫 [교사] " : (memo.rid === "student" ? "🧑‍🎓 [학생] " : "");
+  metaEl.textContent = "- " + roleText + (memo.author || "익명");
+  div.appendChild(metaEl);
 
   return div;
 }
 
 
 // ===================================================
-// 사용자 인증 (Google 로그인)
-// 백엔드 2: Google 계정으로 로그인하고 내 정보로 메모를 작성합니다.
+// 사용자 인증 및 역할(rid) 구분
+// 백엔드 2:
+// - 교사(rid = 'teacher'): Google 로그인, 모든 메모 작성 및 삭제 가능
+// - 학생(rid = 'student'): 익명 참여, 본인 메모만 작성 및 삭제 가능
 // ===================================================
 
 let currentUser = null;
@@ -169,9 +179,21 @@ const userArea = document.getElementById("userArea");
 
 // 로그인 상태 변경 감지
 onAuthStateChanged(auth, function (user) {
-  currentUser = user;
+  if (user) {
+    // 익명 로그인이면 학생(student), 구글 로그인이면 교사(teacher)로 구분합니다.
+    const isAnonymous = user.isAnonymous;
+    currentUser = {
+      uid: user.uid,
+      displayName: isAnonymous ? "익명 학생" : (user.displayName || "선생님"),
+      isAnonymous: isAnonymous,
+      rid: isAnonymous ? "student" : "teacher"
+    };
+  } else {
+    currentUser = null;
+  }
+
   updateUserArea();
-  render(); // 로그인 상태가 변경되면 본인 메모 삭제 버튼을 갱신합니다.
+  render(); // 역할 및 로그인 상태에 따라 삭제 권한을 다시 그립니다.
 });
 
 // 로그인 영역(userArea) 화면 표시
@@ -180,10 +202,12 @@ function updateUserArea() {
   userArea.innerHTML = "";
 
   if (currentUser) {
-    // 로그인된 상태: 사용자 이름과 로그아웃 버튼 표시
+    // 로그인된 상태: 역할 배지, 이름, 권한 설명 및 로그아웃 버튼 표시
+    const roleBadge = currentUser.rid === "teacher" ? "👨‍🏫 [교사]" : "🧑‍🎓 [학생]";
+    const roleDesc = currentUser.rid === "teacher" ? "(모든 메모 관리 권한)" : "(내 메모만 생성/삭제 가능)";
+
     const greeting = document.createElement("span");
-    const name = currentUser.displayName || "선생님";
-    greeting.textContent = `안녕하세요, ${name}님! `;
+    greeting.textContent = `${roleBadge} ${currentUser.displayName}님 ${roleDesc} `;
     userArea.appendChild(greeting);
 
     const logoutBtn = document.createElement("button");
@@ -198,18 +222,36 @@ function updateUserArea() {
     });
     userArea.appendChild(logoutBtn);
   } else {
-    // 로그인되지 않은 상태: Google 로그인 버튼 표시
-    const loginBtn = document.createElement("button");
-    loginBtn.textContent = "Google 계정으로 로그인";
-    loginBtn.addEventListener("click", async function () {
+    // 로그인되지 않은 상태: 교사(Google) 및 학생(익명) 버튼 표시
+    const teacherBtn = document.createElement("button");
+    teacherBtn.textContent = "👨‍🏫 교사 로그인 (Google)";
+    teacherBtn.style.marginRight = "8px";
+    teacherBtn.addEventListener("click", async function () {
       try {
         await signInWithPopup(auth, provider);
       } catch (error) {
-        console.error("로그인 실패:", error);
+        console.error("교사 로그인 실패:", error);
         alert("로그인에 실패했습니다: " + (error.message || error.code));
       }
     });
-    userArea.appendChild(loginBtn);
+
+    const studentBtn = document.createElement("button");
+    studentBtn.textContent = "🧑‍🎓 학생 참여 (익명)";
+    studentBtn.addEventListener("click", async function () {
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("익명 로그인 실패:", error);
+        if (error.code === "auth/operation-not-allowed") {
+          alert("Firebase 콘솔(Authentication > Sign-in method)에서 '익명' 제공업체를 사용 설정해 주세요.");
+        } else {
+          alert("익명 참여에 실패했습니다: " + (error.message || error.code));
+        }
+      }
+    });
+
+    userArea.appendChild(teacherBtn);
+    userArea.appendChild(studentBtn);
   }
 }
 
@@ -230,7 +272,7 @@ input.addEventListener("keydown", async function (e) {
 
     // 로그인 여부 확인
     if (!currentUser) {
-      alert("Google 계정으로 로그인 후 메모를 작성할 수 있습니다.");
+      alert("교사 로그인 또는 학생 참여 후 메모를 작성할 수 있습니다.");
       return;
     }
 
