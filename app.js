@@ -67,8 +67,12 @@ async function addMemo(text) {
       text: text,
       createdAt: Date.now()
     });
+    return true;
   } catch (error) {
     console.error("메모를 저장하는 중 오류가 발생했습니다:", error);
+    alert("메모를 저장하지 못했습니다.\n\n[오류 원인]: " + (error.code || error.message) +
+      "\n\nFirebase 콘솔(Firestore Database > 규칙)에서 읽기/쓰기 권한(allow read, write: if true;)이 설정되어 있는지 확인해 주세요.");
+    return false;
   }
 }
 
@@ -79,6 +83,7 @@ async function deleteMemo(id) {
     await deleteDoc(doc(db, "memos", id));
   } catch (error) {
     console.error("메모를 삭제하는 중 오류가 발생했습니다:", error);
+    alert("메모를 삭제하지 못했습니다.\n\n[오류 원인]: " + (error.code || error.message));
   }
 }
 
@@ -126,15 +131,21 @@ function makeMemo(memo) {
 const input = document.getElementById("input");
 
 input.addEventListener("keydown", async function (e) {
+  // 한글 입력 중(조합 중) 발생하는 엔터는 무시하고 완성된 후 처리합니다.
+  if (e.isComposing) return;
+
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
 
     const text = input.value.trim();
     if (text === "") return;
 
-    input.value = "";
-    await addMemo(text);
-    await render();
+    // 저장 성공 시에만 입력창을 비우고 화면을 갱신합니다.
+    const success = await addMemo(text);
+    if (success) {
+      input.value = "";
+      await render();
+    }
   }
 });
 
