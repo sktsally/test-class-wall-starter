@@ -18,6 +18,13 @@ import {
   orderBy,
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
 // --- Firebase 설정 ---
 const firebaseConfig = {
@@ -29,9 +36,11 @@ const firebaseConfig = {
   appId: "1:963396457322:web:a5df12e520f4ffab0b4b13"
 };
 
-// Firebase 및 Firestore 초기화
+// Firebase, Firestore 및 Auth 초기화
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
 
 // ===================================================
@@ -62,9 +71,23 @@ async function loadMemos() {
 // 메모를 새로 씁니다.
 // 백엔드 2: 여기에 "누가 썼는지"(uid)를 함께 저장하게 됩니다.
 async function addMemo(text) {
+  // 로그인 여부 확인
+  if (!currentUser) {
+    alert("로그인 후 메모를 작성할 수 있습니다.");
+    return false;
+  }
+
+  // 5글자 이상일 때만 저장합니다.
+  if (!text || text.trim().length < 5) {
+    alert("메모는 5글자 이상 입력해 주세요.");
+    return false;
+  }
+
   try {
     await addDoc(collection(db, "memos"), {
       text: text,
+      uid: currentUser.uid,
+      author: currentUser.displayName || "선생님",
       createdAt: Date.now()
     });
     return true;
@@ -107,19 +130,87 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  const del = document.createElement("button");
-  del.textContent = "×";
-  del.addEventListener("click", async function () {
-    await deleteMemo(memo.id);
-    await render();
-  });
-  div.appendChild(del);
+  // 본인이 작성한 메모이거나 기존 메모(uid 없음)일 때만 삭제 버튼 표시
+  if (!memo.uid || (currentUser && currentUser.uid === memo.uid)) {
+    const del = document.createElement("button");
+    del.textContent = "×";
+    del.addEventListener("click", async function () {
+      await deleteMemo(memo.id);
+      await render();
+    });
+    div.appendChild(del);
+  }
 
   const span = document.createElement("span");
   span.textContent = memo.text;
   div.appendChild(span);
 
+  // 작성자가 있으면 표시
+  if (memo.author) {
+    const authorEl = document.createElement("div");
+    authorEl.style.fontSize = "12px";
+    authorEl.style.color = "#888";
+    authorEl.style.marginTop = "8px";
+    authorEl.textContent = "- " + memo.author;
+    div.appendChild(authorEl);
+  }
+
   return div;
+}
+
+
+// ===================================================
+// 사용자 인증 (Google 로그인)
+// 백엔드 2: Google 계정으로 로그인하고 내 정보로 메모를 작성합니다.
+// ===================================================
+
+let currentUser = null;
+const userArea = document.getElementById("userArea");
+
+// 로그인 상태 변경 감지
+onAuthStateChanged(auth, function (user) {
+  currentUser = user;
+  updateUserArea();
+  render(); // 로그인 상태가 변경되면 본인 메모 삭제 버튼을 갱신합니다.
+});
+
+// 로그인 영역(userArea) 화면 표시
+function updateUserArea() {
+  if (!userArea) return;
+  userArea.innerHTML = "";
+
+  if (currentUser) {
+    // 로그인된 상태: 사용자 이름과 로그아웃 버튼 표시
+    const greeting = document.createElement("span");
+    const name = currentUser.displayName || "선생님";
+    greeting.textContent = `안녕하세요, ${name}님! `;
+    userArea.appendChild(greeting);
+
+    const logoutBtn = document.createElement("button");
+    logoutBtn.textContent = "로그아웃";
+    logoutBtn.style.marginLeft = "8px";
+    logoutBtn.addEventListener("click", async function () {
+      try {
+        await signOut(auth);
+      } catch (error) {
+        console.error("로그아웃 실패:", error);
+      }
+    });
+    userArea.appendChild(logoutBtn);
+  } else {
+    // 로그인되지 않은 상태: Google 로그인 버튼 표시
+    const loginBtn = document.createElement("button");
+    loginBtn.textContent = "Google 계정으로 로그인";
+    loginBtn.addEventListener("click", async function () {
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (error) {
+        console.error("로그인 실패:", error);
+        alert("로그인에 실패했습니다: " + (error.message || error.code));
+      }
+    });
+    userArea.appendChild(loginBtn);
+  }
 }
 
 
@@ -137,8 +228,20 @@ input.addEventListener("keydown", async function (e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
 
+    // 로그인 여부 확인
+    if (!currentUser) {
+      alert("Google 계정으로 로그인 후 메모를 작성할 수 있습니다.");
+      return;
+    }
+
     const text = input.value.trim();
     if (text === "") return;
+
+    // 5글자 이상인지 확인합니다.
+    if (text.length < 5) {
+      alert("메모는 5글자 이상 입력해 주세요.");
+      return;
+    }
 
     // 저장 성공 시에만 입력창을 비우고 화면을 갱신합니다.
     const success = await addMemo(text);

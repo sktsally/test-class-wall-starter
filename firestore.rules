@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /memos/{memoId} {
+      // 누구나 읽을 수 있음
+      allow read: if true;
+
+      // 내용이 5글자 이상일 때만 등록 가능
+      allow create: if request.resource.data.text is string 
+                    && request.resource.data.text.size() >= 5;
+
+      // 삭제 가능
+      allow delete: if true;
+    }
+  }
+}
