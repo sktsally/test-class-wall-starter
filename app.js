@@ -13,6 +13,7 @@ import {
   addDoc,
   getDocs,
   deleteDoc,
+  updateDoc,
   doc,
   query,
   orderBy,
@@ -112,6 +113,36 @@ async function deleteMemo(id) {
   }
 }
 
+// AI 코멘트를 요청하고 메모에 저장합니다.
+// 교사 권한으로 호출하며, 학생의 개인식별정보는 제외하고 메모 본문(text)만 서버로 전달합니다.
+async function requestAiComment(memoId, text) {
+  try {
+    const res = await fetch("/api/gemini", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: text })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "AI 코멘트 생성에 실패했습니다.");
+    }
+
+    // 생성된 AI 코멘트를 Firestore 해당 메모에 저장합니다.
+    await updateDoc(doc(db, "memos", memoId), {
+      aiComment: data.comment
+    });
+
+    return true;
+  } catch (error) {
+    console.error("AI 코멘트 요청 실패:", error);
+    alert("AI 코멘트 생성 실패: " + error.message);
+    return false;
+  }
+}
+
 
 // ===================================================
 // 화면 그리기
@@ -162,6 +193,33 @@ function makeMemo(memo) {
   const roleText = memo.rid === "teacher" ? "👨‍🏫 [교사] " : (memo.rid === "student" ? "🧑‍🎓 [학생] " : "");
   metaEl.textContent = "- " + roleText + (memo.author || "익명");
   div.appendChild(metaEl);
+
+  // 이미 생성된 AI 코멘트가 있으면 표시
+  if (memo.aiComment) {
+    const aiBox = document.createElement("div");
+    aiBox.className = "ai-comment";
+    aiBox.textContent = "🤖 AI 코멘트: " + memo.aiComment;
+    div.appendChild(aiBox);
+  }
+
+  // 교사(teacher)일 때만 AI 코멘트 생성 버튼 표시
+  if (isTeacher) {
+    const aiBtn = document.createElement("button");
+    aiBtn.className = "ai-btn";
+    aiBtn.textContent = memo.aiComment ? "🤖 AI 코멘트 다시 받기" : "🤖 AI 코멘트 달기";
+    aiBtn.addEventListener("click", async function () {
+      aiBtn.disabled = true;
+      const originalText = aiBtn.textContent;
+      aiBtn.textContent = "⏳ AI 생각 중...";
+
+      const success = await requestAiComment(memo.id, memo.text);
+      if (!success) {
+        aiBtn.disabled = false;
+        aiBtn.textContent = originalText;
+      }
+    });
+    div.appendChild(aiBtn);
+  }
 
   return div;
 }

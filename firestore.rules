@@ -15,8 +15,9 @@ service cloud.firestore {
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.rid in ['teacher', 'student'];
 
-      // 3. 수정: 임의 내용 변조 방지 (수정 불가)
-      allow update: if false;
+      // 3. 수정: 교사(Google 로그인 사용자)만 AI 코멘트 등록/수정 가능 (학생은 수정 불가)
+      allow update: if request.auth != null
+                    && request.auth.token.firebase.sign_in_provider == 'google.com';
 
       // 4. 삭제:
       // - 교사(Google 로그인): 모든 메모 삭제 가능 (관리 권한)

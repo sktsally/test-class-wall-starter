@@ -19,8 +19,39 @@
 
     /* 메모가 붙는 담벼락 */
     #wall { display: flex; flex-wrap: wrap; gap: 10px; }
-    .memo { border: 1px solid #ddd; background: #fffde7; padding: 10px; width: 200px; font-size: 15px; }
+    .memo { border: 1px solid #ddd; background: #fffde7; padding: 10px; width: 220px; font-size: 15px; }
     .memo button { float: right; }
+
+    /* AI 코멘트 스타일 */
+    .ai-comment {
+      margin-top: 8px;
+      padding: 6px 8px;
+      background: #e8f4fd;
+      border-left: 3px solid #1a73e8;
+      font-size: 13px;
+      color: #155724;
+      background-color: #d4edda;
+      border-left-color: #28a745;
+      border-radius: 4px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .ai-btn {
+      float: none !important;
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      font-size: 12px;
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      color: #1565c0;
+      border-radius: 4px;
+      cursor: pointer;
+      padding: 5px 8px;
+      text-align: center;
+    }
+    .ai-btn:hover { background: #bbdefb; }
+    .ai-btn:disabled { opacity: 0.6; cursor: wait; }
   </style>
 </head>
 <body>
@@ -41,6 +72,6 @@
     type="module" 로 불러옵니다.
     Firebase SDK가 import 문법이라, 백엔드 시간에 이 방식이어야 붙일 수 있습니다.
   -->
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>
